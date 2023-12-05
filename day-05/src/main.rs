@@ -82,7 +82,7 @@ fn main() -> std::io::Result<()> {
 
     println!("p1: {:?}", r);
 
-    let r = seeds
+    let binding = seeds
         .iter()
         .batching(|it| match it.next() {
             None => None,
@@ -91,125 +91,125 @@ fn main() -> std::io::Result<()> {
                 Some(y) => Some((*x, *y)),
             },
         })
-        .collect::<Vec<(i64, i64)>>()
+        .collect::<Vec<(i64, i64)>>();
+
+    let r = binding
         .iter()
         .map(|(start, size)| *start..*start + *size)
-        // .flat_map(|(start, range)| *start..*start + *range)
-        .flat_map(|upper_seed_range| {
+        .map(|upper_seed_range| {
             maps.iter().fold(
                 [upper_seed_range.clone()].to_vec(),
-                |ranges, (source_to_dest, mapping)| {
+                |ranges, (source_to_dest, stage_mappings)| {
                     println!(
                         "\n\nstage: {source_to_dest:?} - current ranges to check: {:?}",
                         ranges
                     );
 
-                    let mut refined_ranges = Vec::new();
-
-                    ranges.iter().for_each(|seed_range| {
-                        // loop all different stages (seed to soil, soil to etc)
-                        let mut new_ranges = mapping
-                            .iter()
-                            .map(|(destination, source, range)| {
-                                (
-                                    *destination..(*destination + *range),
-                                    *source..*source + *range,
-                                )
-                            })
-                            .flat_map(|(dest, source)| {
-                                println!("{seed_range:?}: {source:?} -> {dest:?}");
-                                let mut splitted_ranges = Vec::new();
-                                // src :                |---------|
-                                // seed: |---------|
-                                // OR
-                                // src : |---------|
-                                // seed:                |---------|
-                                if seed_range.end < source.start || seed_range.start > source.end {
-                                    println!("case 1 {seed_range:?}: {source:?} -> {dest:?}");
-                                }
-                                // seed:     |---------|
-                                // src : |-----------------|
-                                else if seed_range.start >= source.start
-                                    && seed_range.end <= source.end
-                                {
-                                    println!("case 2 {seed_range:?}: {source:?} -> {dest:?}");
-                                    let match_start_at = seed_range.start - source.start;
-                                    splitted_ranges.push(
-                                        dest.start + match_start_at
-                                            ..dest.start
-                                                + match_start_at
-                                                + (seed_range.end - seed_range.start),
-                                    );
-                                }
-                                // seed: |-----------------|
-                                // src :     |---------|
-                                else if seed_range.start < source.start
-                                    && seed_range.end > source.end
-                                {
-                                    println!("case 3 {seed_range:?}: {source:?} -> {dest:?}");
-                                    // beginning is unchanged
-                                    let _beginning = seed_range.start..source.start;
-                                    let _matching = dest.clone();
-                                    let _end = source.end..seed_range.end;
-                                    splitted_ranges
-                                        .append(&mut [_beginning, _matching, _end].to_vec());
-                                }
-                                // seed:     |-----------------|
-                                // src : |---------|
-                                else if seed_range.start < source.end
-                                    && seed_range.end > source.end
-                                {
-                                    println!("case 4 {seed_range:?}: {source:?} -> {dest:?}");
-                                    let _matching =
-                                        dest.start + (seed_range.start - source.start)..dest.end;
-                                    let _end = source.end..seed_range.end;
-                                    splitted_ranges.append(&mut [_matching, _end].to_vec());
-                                }
-                                // seed:     |-----------------|
-                                // src :                  |---------|
-                                else if seed_range.start < source.start
-                                    && seed_range.end < source.end
-                                {
-                                    println!("case 5 {seed_range:?}: {source:?} -> {dest:?}");
-                                    let _beginning = seed_range.start..source.start;
-                                    let _matching = dest.start
-                                        ..dest.start
-                                            + ((seed_range.end - source.start)
-                                                - (seed_range.start - source.start))
-                                            - (source.start - seed_range.start);
-                                    splitted_ranges.append(&mut [_beginning, _matching].to_vec());
-                                }
-
-                                assert!(
-                                    splitted_ranges.is_empty()
-                                        || splitted_ranges
-                                            .iter()
-                                            .map(|r| r.end - r.start)
-                                            .sum::<i64>()
-                                            == seed_range.end - seed_range.start
+                    let (mut a, mut b) = stage_mappings
+                        .iter()
+                        .map(|(destination, source, range)| {
+                            (
+                                *destination..(*destination + *range),
+                                *source..*source + *range,
+                            )
+                        })
+                        .inspect(|(dest, src)| println!("next from {:?} => {:?}", dest, src))
+                        .fold(
+                            (ranges.clone(), Vec::new()),
+                            |(mut todo, mut refined_ranges), (dest, source)| {
+                                println!(
+                                    "not matched: {todo:?} already matched: {refined_ranges:?}"
                                 );
 
-                                splitted_ranges
-                            })
-                            .collect_vec();
+                                let mut remaining = Vec::new();
+                                todo.clone().iter().for_each(|seed_range| {
+                                    let (mut not_matched, mut matched) =
+                                        combine(&seed_range, &source, &dest);
 
-                        refined_ranges.append(&mut new_ranges);
-                    });
+                                    remaining.append(&mut not_matched);
+                                    refined_ranges.append(&mut matched);
+                                });
 
-                    println!("refined: {:?}", refined_ranges);
+                                (remaining, refined_ranges)
+                            },
+                        );
 
-                    if refined_ranges.is_empty() {
-                        return ranges;
-                    } else {
-                        return refined_ranges;
-                    }
+                    a.append(&mut b);
+                    a
                 },
             )
         })
+        .flat_map(|ranges| ranges)
         .map(|range| range.start)
         .min();
 
     println!("p2: {:?}", r);
 
     Ok(())
+}
+
+type R = std::ops::Range<i64>;
+
+fn combine(seed_range: &R, source: &R, dest: &R) -> (Vec<R>, Vec<R>) {
+    println!("    range {seed_range:?} | {source:?} -> {dest:?}");
+
+    let mut splitted_ranges = Vec::new();
+    let mut todo = Vec::new();
+    // src :                |---------|
+    // seed: |---------|
+    // OR
+    // src : |---------|
+    // seed:                |---------|
+    if seed_range.end < source.start || seed_range.start > source.end {
+        println!("\tcase 1 {seed_range:?}: {source:?} -> {dest:?}");
+        todo = [seed_range.clone()].to_vec();
+    }
+    // seed:     |---------|
+    // src : |-----------------|
+    else if seed_range.start >= source.start && seed_range.end <= source.end {
+        println!("\tcase 2 {seed_range:?}: {source:?} -> {dest:?}");
+        let match_start_at = seed_range.start - source.start;
+        splitted_ranges.push(
+            dest.start + match_start_at
+                ..dest.start + match_start_at + (seed_range.end - seed_range.start),
+        );
+    }
+    // seed: |-----------------|
+    // src :     |---------|
+    else if seed_range.start < source.start && seed_range.end > source.end {
+        println!("\tcase 3 {seed_range:?}: {source:?} -> {dest:?}");
+        // beginning is unchanged
+        let beginning = seed_range.start..source.start;
+        let matching = dest.clone();
+        let end = source.end..seed_range.end;
+
+        todo.push(beginning);
+        todo.push(end);
+        splitted_ranges.push(matching);
+    }
+    // seed:     |-----------------|
+    // src : |---------|
+    else if seed_range.start < source.end && seed_range.end > source.end {
+        println!("\tcase 4 {seed_range:?}: {source:?} -> {dest:?}");
+        let matching = dest.start + (seed_range.start - source.start)..dest.end;
+        let end = source.end..seed_range.end;
+        todo.push(end);
+        splitted_ranges.push(matching);
+    }
+    // seed:     |-----------------|
+    // src :                  |---------|
+    else if seed_range.start < source.start && seed_range.end <= source.end {
+        println!("\tcase 5 {seed_range:?}: {source:?} -> {dest:?}");
+        let beginning = seed_range.start..source.start;
+        let matching = dest.start
+            ..dest.start + ((seed_range.end - source.start) - (seed_range.start - source.start))
+                - (source.start - seed_range.start);
+        todo.push(beginning);
+        splitted_ranges.push(matching);
+    } else {
+        panic!();
+    }
+
+    println!("\tresult of splitting: {todo:?} --- {splitted_ranges:?}");
+    (todo, splitted_ranges)
 }
