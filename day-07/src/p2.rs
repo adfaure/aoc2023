@@ -87,11 +87,12 @@ impl From<Hand> for Type {
             },
         );
 
-        let copy_for_debug = grouped_cards.clone();
         let grouped_cards_with_joker = grouped_cards
             .into_iter()
             .map(|(key, value)| (key, value + nb_joker))
             .collect::<HashMap<_, _>>();
+
+        let copy_for_debug = grouped_cards_with_joker.clone();
 
         let hand = if grouped_cards_with_joker.len() == 1 || nb_joker == 5 {
             Type::FiveOfAKind(hand)
@@ -155,7 +156,7 @@ fn main() -> std::io::Result<()> {
     let score = hand_score
         .iter()
         .enumerate()
-        .inspect(|elem| println!("{:?} * {:?}", elem.1 .1, elem.0 + 1))
+        // .inspect(|elem| println!("{:?} * {:?}", elem.1 .1, elem.0 + 1))
         .map(|(i, (_, score))| (1 + i) as u64 * score)
         .sum::<u64>();
 
