@@ -21,16 +21,16 @@ fn main() -> std::io::Result<()> {
         .filter(|x| grid.iter().map(|line| line[*x]).all(|c| c == '.'))
         .collect_vec();
 
-    empty_lines.iter().rev().for_each(|x| {
-        let clone = grid[*x as usize].clone();
-        grid.insert(*x as usize, clone);
-    });
+    // empty_lines.iter().rev().for_each(|x| {
+    //     let clone = grid[*x as usize].clone();
+    //     grid.insert(*x as usize, clone);
+    // });
 
-    empty_rows.iter().rev().for_each(|y| {
-        let empty = '.';
-        grid.iter_mut()
-            .for_each(|line| line.insert(*y as usize, empty));
-    });
+    // empty_rows.iter().rev().for_each(|y| {
+    //     let empty = '.';
+    //     grid.iter_mut()
+    //         .for_each(|line| line.insert(*y as usize, empty));
+    // });
 
     println!("empty lines: {:?}", empty_lines);
     println!("empty rows: {:?}", empty_rows);
@@ -49,18 +49,46 @@ fn main() -> std::io::Result<()> {
                 .collect_vec()
         })
         .enumerate()
+        .map(|(x, g)| (x + 1, g))
         .collect_vec();
 
-    let combinations: i32 = galaxies
+    // Set this to 2 to get p1
+    let expansion_size = 1_000_000;
+
+    let combinations: i64 = galaxies
         .iter()
         .combinations(2)
         // .inspect(|comb| print!("{comb:?}"))
         .map(|comb| comb.into_iter().collect_tuple().unwrap())
-        .map(|(g1, g2)| (g1.1, g2.1))
-        .map(|(g1, g2)| (g1.0.abs_diff(g2.0) + g1.1.abs_diff(g2.1)) as i32)
-    // .inspect(|dist| println!("= {dist}"))
+        .map(|(g1, g2)| {
+            (
+                g1,
+                g2,
+                empty_lines
+                    .iter()
+                    .filter(|x| {
+                        let to = g1.1.1.max(g2.1.1);
+                        let from = g1.1.1.min(g2.1.1);
+                        (from..=to).contains(x)
+                    })
+                    .count()
+                    + empty_rows
+                        .iter()
+                        .filter(|y| {
+                            let to = g1.1.0.max(g2.1.0);
+                            let from = g1.1.0.min(g2.1.0);
+                            (from..=to).contains(y)
+                        })
+                        .count(),
+            )
+        })
+        //.inspect(|(g1, g2, crossing)| println!("{:?} {:?} {:?}", g1, g2, crossing))
+        .map(|(g1, g2, cross)| (g1.1, g2.1, cross))
+        .map(|(g1, g2, cross)| {
+            (g1.0.abs_diff(g2.0) + g1.1.abs_diff(g2.1) + (expansion_size * cross) - cross) as i64
+        })
         .sum();
 
-    println!("p1: {}", combinations);
+    println!("p: {}", combinations);
     Ok(())
 }
