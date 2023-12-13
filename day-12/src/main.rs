@@ -34,29 +34,35 @@ fn check(hotsprings: &Vec<char>, nb_failures: &Vec<u32>) -> bool {
     total_checked == nb_failures.len()
 }
 
-fn check_allow_failure_overflow(hotsprings: &Vec<char>, nb_failures: &Vec<u32>) -> bool {
-    // yuck
-    let mut total_checked = 0;
+fn check_prune(hotsprings: &Vec<char>, nb_failures: &Vec<u32>) -> bool {
+    // println!("try {:?} {:?}", hotsprings.iter().join(""), nb_failures);
     for (i, (_, group)) in hotsprings
         .iter()
-        .group_by(|c| **c == '#')
+        .take_while(|c| **c != '?')
+        .enumerate()
+        .group_by(|(idx, c)| **c == '#')
         .into_iter()
         .filter(|(match_value, _)| *match_value)
         .enumerate()
     {
-        total_checked += 1;
-
-        let failure_group: Vec<_> = group.collect();
-        if failure_group.len() as u32 != nb_failures[i] {
+        if i >= nb_failures.len() {
             return false;
+        } else {
+            let nb_failure_expected = nb_failures[i];
+
+            let failure_group: Vec<_> = group.collect();
+
+            if failure_group.is_empty() || (failure_group.len() as u32) > nb_failure_expected {
+                // println!("fail at: nv_expected_failure: {nb_failure_expected} group_found: {failure_group:?} of len: {}", failure_group.len());
+                return false;
+            }
         }
     }
 
-    return true;
-
+    true
     // println!("{:?} {:?}", hotsprings.iter().join(""), nb_failures);
     // println!("{} {}", total_checked, nb_failures.len());
-    // total_checked == nb_failures.len()
+    // total_checked < nb_failures.len() as u32 && exist
 }
 
 fn recurse(hotsprings: Vec<char>, nb_failures: &Vec<u32>) -> u32 {
@@ -73,7 +79,28 @@ fn recurse(hotsprings: Vec<char>, nb_failures: &Vec<u32>) -> u32 {
 
             add_failure[next_joker_pos] = '#';
             add_hotsprint[next_joker_pos] = '.';
-            recurse(add_failure, nb_failures) + recurse(add_hotsprint, nb_failures)
+
+            let d = if check_prune(&add_failure, &nb_failures) {
+                // print!("f_pass: ");
+                // println!("{:?} {:?}", add_failure.iter().join(""), nb_failures);
+                recurse(add_failure, nb_failures)
+            } else {
+                // print!("f_don't pass: ");
+                // println!("{:?} {:?}", add_failure.iter().join(""), nb_failures);
+                0
+            };
+
+            let f = if check_prune(&add_hotsprint, &nb_failures) {
+                // print!("hot_pass: ");
+                // println!("{:?} {:?}", add_hotsprint.iter().join(""), nb_failures);
+                recurse(add_hotsprint, nb_failures)
+            } else {
+                // print!("hot_don't pass: ");
+                // println!("{:?} {:?}", add_hotsprint.iter().join(""), nb_failures);
+                0
+            };
+
+            f + d
         }
         None => {
             if check(&hotsprings, &nb_failures) {
@@ -170,6 +197,7 @@ fn chunk_recurse_p2(
             add_hotsprint[next_joker_pos] = '.';
 
             let mut result = Vec::new();
+
             let mut diese = chunk_recurse_p2(memo, add_failure.clone(), &nb_failures);
             let mut dot = chunk_recurse_p2(memo, add_hotsprint.clone(), &nb_failures);
 
@@ -268,7 +296,7 @@ fn recurse_p2(hotsprings: Vec<char>, nb_failures: &Vec<u32>, orig_len: u32) -> u
 }
 
 fn main() -> std::io::Result<()> {
-    if false {
+    if true {
         let problems: Vec<_> = BufReader::new(File::open("input")?)
             .lines()
             .filter_map(|line| line.ok())
@@ -279,11 +307,17 @@ fn main() -> std::io::Result<()> {
             .iter()
             .map(|line| {
                 let (hotspring_str, failures_str) = line.split_once(" ").unwrap();
-                let hotsrpings = iter::repeat(hotspring_str.chars().chain(['?']))
-                    .take(rp1)
-                    .flatten()
-                    .map(|c| c)
-                    .collect_vec();
+                let hotsrpings =
+                    iter::repeat(hotspring_str.chars().chain(iter::repeat('?').take(1)))
+                        .take(rp1 - 1)
+                        // Insert a . at the end
+                        .chain(iter::repeat(
+                            hotspring_str.chars().chain(iter::repeat('.').take(1)),
+                        ))
+                        .take(rp1)
+                        .flatten()
+                        .map(|c| c)
+                        .collect_vec();
                 let nb_failures = iter::repeat(failures_str.split(","))
                     .take(rp1)
                     .flatten()
@@ -292,48 +326,53 @@ fn main() -> std::io::Result<()> {
 
                 (hotsrpings, nb_failures)
             })
-            .map(|(hotsprings, failures)| recurse(hotsprings, &failures))
+            .map(|(hotsprings, failures)| (hotsprings.clone(), recurse(hotsprings, &failures)))
+            .inspect(|(h, s)| println!("{:?} -> {}", h.iter().join(""), s))
+            .map(|(_, s)| s)
             .sum();
 
         println!("p1: {solution:?}");
     }
-    let repeat = 5;
 
-    let problems: Vec<_> = BufReader::new(File::open("input")?)
-        .lines()
-        .filter_map(|line| line.ok())
-        .collect();
+    if false {
+        let repeat = 5;
 
-    let solution: u32 = problems
-        .iter()
-        .map(|line| {
-            let (hotspring_str, failures_str) = line.split_once(" ").unwrap();
-            let hotsrpings = iter::repeat(hotspring_str.chars().chain(iter::repeat('?').take(1)))
-                .take(repeat - 1)
-                // Insert a . at the end
-                .chain(iter::repeat(
-                    hotspring_str.chars().chain(iter::repeat('.').take(1)),
-                ))
-                .take(repeat)
-                .flatten()
-                .map(|c| c)
-                .take((1 + hotspring_str.len()) * repeat)
-                .collect_vec();
+        let problems: Vec<_> = BufReader::new(File::open("input")?)
+            .lines()
+            .filter_map(|line| line.ok())
+            .collect();
 
-            println!("created {}", hotsrpings.iter().join(""));
+        let solution: u32 = problems
+            .iter()
+            .map(|line| {
+                let (hotspring_str, failures_str) = line.split_once(" ").unwrap();
+                let hotsrpings =
+                    iter::repeat(hotspring_str.chars().chain(iter::repeat('?').take(1)))
+                        .take(repeat - 1)
+                        // Insert a . at the end
+                        .chain(iter::repeat(
+                            hotspring_str.chars().chain(iter::repeat('.').take(1)),
+                        ))
+                        .take(repeat)
+                        .flatten()
+                        .map(|c| c)
+                        .take((1 + hotspring_str.len()) * repeat)
+                        .collect_vec();
 
-            let nb_failures = failures_str
-                .split(",")
-                .filter_map(|n| n.parse::<u32>().ok())
-                .collect_vec();
+                println!("created {}", hotsrpings.iter().join(""));
 
-            (hotsrpings, nb_failures, hotspring_str.len())
-        })
-        .map(|(hotsprings, failures, len)| recurse_p2(hotsprings, &failures, 1 + len as u32))
-        .sum();
+                let nb_failures = failures_str
+                    .split(",")
+                    .filter_map(|n| n.parse::<u32>().ok())
+                    .collect_vec();
 
-    println!("p2: {solution:?}");
+                (hotsrpings, nb_failures, hotspring_str.len())
+            })
+            .map(|(hotsprings, failures, len)| recurse_p2(hotsprings, &failures, 1 + len as u32))
+            .sum();
 
+        println!("p2: {solution:?}");
+    }
     Ok(())
 }
 
