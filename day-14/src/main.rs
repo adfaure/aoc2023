@@ -239,7 +239,6 @@ fn main() -> std::io::Result<()> {
 
         match memo.insert(find_cycle_grid.clone(), i) {
             Some(cycle_start) => {
-                println!("{:?}", i);
                 return Some((cycle_start, i - cycle_start))
             },
             None => {}
