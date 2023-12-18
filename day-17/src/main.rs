@@ -109,18 +109,19 @@ impl<T: Eq> PartialOrd for Cell<T> {
 }
 
 fn path_finding(grid: &Vec<Vec<u32>>, start: (u32, u32), end: (u32, u32)) -> Option<u32> {
-    let mut seen: HashMap<((u32, u32), Vec<(i32, i32)>), u32> = HashMap::new();
+    let mut seen: HashMap<((u32, u32), ((i32, i32), i32)), u32> = HashMap::new();
     let mut stack = BinaryHeap::new();
 
-    seen.insert(((0, 0), Vec::new()), 0);
+    seen.insert(((0, 0), ((0, 0), 0)), 0);
+
     stack.push(Reverse(Cell {
         weight: 0,
-        data: ((0, 0), Vec::new()),
+        data: ((0, 0), ((0, 0), 0)),
     }));
 
     while let Some(Reverse(Cell {
         weight: current_dist,
-        data: (current_pos, last_moves),
+        data: (current_pos, (last_move, nb_times)),
     })) = stack.pop()
     {
         // println!("queue content: {:?}", stack);
@@ -133,7 +134,7 @@ fn path_finding(grid: &Vec<Vec<u32>>, start: (u32, u32), end: (u32, u32)) -> Opt
 
         if current_pos == end {
             println!("find end with heat loss: {:?}", current_dist);
-            grid_print(grid, &start, &last_moves);
+            // grid_print(grid, &start, &last_moves);
             return Some(current_dist);
             // possible_answers.insert(current_dist);
         }
@@ -146,10 +147,7 @@ fn path_finding(grid: &Vec<Vec<u32>>, start: (u32, u32), end: (u32, u32)) -> Opt
                     *neigh_y as i32 - current_pos.1 as i32,
                 );
 
-                match last_moves.last() {
-                    Some(prev_dir) => dir != reverse_dir(prev_dir),
-                    None => true,
-                }
+                dir != reverse_dir(&last_move)
             })
             // Ensure four moves in the same direction
             .filter(|(neigh_x, neigh_y)| {
@@ -160,18 +158,11 @@ fn path_finding(grid: &Vec<Vec<u32>>, start: (u32, u32), end: (u32, u32)) -> Opt
                     *neigh_y as i32 - current_pos.1 as i32,
                 );
 
-                let last_move_opt = last_moves.last();
-                if last_move_opt.is_none() {
+                if last_move == (0, 0) {
                     return true;
                 } else {
-                    let last_move = last_move_opt.unwrap();
-                    if dir == *last_move {
-                        return last_moves.len() < 3
-                            || !last_moves
-                                .iter()
-                                .rev()
-                                .take(3)
-                                .all(|previous_dir| previous_dir == &dir);
+                    if dir == last_move {
+                        return nb_times < 3;
                     } else {
                         return true;
                     }
@@ -183,36 +174,29 @@ fn path_finding(grid: &Vec<Vec<u32>>, start: (u32, u32), end: (u32, u32)) -> Opt
                     neigh_y as i32 - current_pos.1 as i32,
                 );
 
-                // println!("Check neighbour: {:?} dir => {:?}", (neigh_x, neigh_y), dir);
-                let mut moves_to_neigh: Vec<(i32, i32)> = last_moves.clone();
-                moves_to_neigh.push(dir);
+                let new_nb_times;
+                if dir == last_move {
+                    new_nb_times = nb_times + 1;
+                } else {
+                    new_nb_times = 1;
+                }
 
+                // println!("Check neighbour: {:?} dir => {:?}", (neigh_x, neigh_y), dir);
                 let dist_to_neigh = current_dist + grid[neigh_y as usize][neigh_x as usize];
 
-                // Max without turning
-                let dir_keys = moves_to_neigh
-                    .clone()
-                    .into_iter()
-                    .rev()
-                    .take(10)
-                    .rev()
-                    .collect_vec();
-
-                // let moves_to_neigh = moves_to_neigh.clone().into_iter().rev().take(3).rev().collect_vec();
-
-                match seen.get(&((neigh_x, neigh_y), dir_keys.clone())) {
+                match seen.get(&((neigh_x, neigh_y), (dir, new_nb_times))) {
                     Some(dist) if dist > &dist_to_neigh => {
-                        seen.insert(((neigh_x, neigh_y), dir_keys), dist_to_neigh);
+                        seen.insert(((neigh_x, neigh_y), (dir, new_nb_times)), dist_to_neigh);
                         stack.push(Reverse(Cell {
                             weight: dist_to_neigh,
-                            data: ((neigh_x, neigh_y), moves_to_neigh),
+                            data: ((neigh_x, neigh_y), (dir, new_nb_times)),
                         }));
                     }
                     None => {
-                        seen.insert(((neigh_x, neigh_y), dir_keys), dist_to_neigh);
+                        seen.insert(((neigh_x, neigh_y), (dir, new_nb_times)), dist_to_neigh);
                         stack.push(Reverse(Cell {
                             weight: dist_to_neigh,
-                            data: ((neigh_x, neigh_y), moves_to_neigh),
+                            data: ((neigh_x, neigh_y), (dir, new_nb_times)),
                         }));
                     }
                     _other_cases => {} // { println!("{_other_cases:?}") }, // already seen and not interesting
@@ -229,18 +213,19 @@ fn path_finding_ultra_crucible(
     start: (u32, u32),
     end: (u32, u32),
 ) -> Option<u32> {
-    let mut seen: HashMap<((u32, u32), Vec<(i32, i32)>), u32> = HashMap::new();
+    let mut seen: HashMap<((u32, u32), ((i32, i32), i32)), u32> = HashMap::new();
     let mut stack = BinaryHeap::new();
 
-    seen.insert(((0, 0), Vec::new()), 0);
+    seen.insert(((0, 0), ((0, 0), 0)), 0);
+
     stack.push(Reverse(Cell {
         weight: 0,
-        data: ((0, 0), Vec::new()),
+        data: ((0, 0), ((0, 0), 0)),
     }));
 
     while let Some(Reverse(Cell {
         weight: current_dist,
-        data: (current_pos, last_moves),
+        data: (current_pos, (last_move, nb_times)),
     })) = stack.pop()
     {
         // println!("queue content: {:?}", stack);
@@ -251,16 +236,9 @@ fn path_finding_ultra_crucible(
         //     current_pos, current_dist, last_moves
         // );
 
-        if current_pos == end
-            && last_moves
-                .iter()
-                .rev()
-                .take_while(|dir| dir == &last_moves.last().unwrap())
-                .count()
-                >= 4
-        {
+        if current_pos == end {
             println!("find end with heat loss: {:?}", current_dist);
-            grid_print(grid, &start, &last_moves);
+            // grid_print(grid, &start, &last_moves);
             return Some(current_dist);
             // possible_answers.insert(current_dist);
         }
@@ -273,10 +251,7 @@ fn path_finding_ultra_crucible(
                     *neigh_y as i32 - current_pos.1 as i32,
                 );
 
-                match last_moves.last() {
-                    Some(prev_dir) => dir != reverse_dir(prev_dir),
-                    None => true,
-                }
+                dir != reverse_dir(&last_move)
             })
             // Ensure four moves in the same direction
             .filter(|(neigh_x, neigh_y)| {
@@ -287,36 +262,13 @@ fn path_finding_ultra_crucible(
                     *neigh_y as i32 - current_pos.1 as i32,
                 );
 
-                let last_move_opt = last_moves.last();
-                if last_move_opt.is_none() {
+                if last_move == (0, 0) {
                     return true;
                 } else {
-                    let last_move = last_move_opt.unwrap();
-                    if dir == *last_move {
-                        return last_moves.len() < 10
-                            || !last_moves
-                                .iter()
-                                .rev()
-                                .take(10)
-                                .all(|previous_dir| previous_dir == &dir);
+                    if dir == last_move {
+                        return nb_times < 10;
                     } else {
-                        let nb_move_in_dir = last_moves
-                            .iter()
-                            .rev()
-                            .take_while(|prev_dir| prev_dir == &last_move)
-                            .take(4)
-                            .count();
-
-                        // println!(
-                        //     "filter: {:?}: {dir:?} => {:?}, last: {:?}: nb found: {} is {}",
-                        //     (neigh_x, neigh_y),
-                        //     last_moves.last(),
-                        //     last_moves.iter().rev().take(10).rev().collect_vec(),
-                        //     nb_move_in_dir,
-                        //     nb_move_in_dir >= 4
-                        // );
-
-                        return nb_move_in_dir >= 4;
+                        return nb_times >= 4;
                     }
                 }
             })
@@ -326,36 +278,29 @@ fn path_finding_ultra_crucible(
                     neigh_y as i32 - current_pos.1 as i32,
                 );
 
+                let new_nb_times;
+                if dir == last_move {
+                    new_nb_times = nb_times + 1;
+                } else {
+                    new_nb_times = 1;
+                }
+
                 // println!("Check neighbour: {:?} dir => {:?}", (neigh_x, neigh_y), dir);
-                let mut moves_to_neigh: Vec<(i32, i32)> = last_moves.clone();
-
                 let dist_to_neigh = current_dist + grid[neigh_y as usize][neigh_x as usize];
-                moves_to_neigh.push(dir);
 
-                // Max without turning
-                let dir_keys = moves_to_neigh
-                    .clone()
-                    .into_iter()
-                    .rev()
-                    .take(10)
-                    .rev()
-                    .collect_vec();
-
-                // let moves_to_neigh = moves_to_neigh.clone().into_iter().rev().take(3).rev().collect_vec();
-
-                match seen.get(&((neigh_x, neigh_y), dir_keys.clone())) {
+                match seen.get(&((neigh_x, neigh_y), (dir, new_nb_times))) {
                     Some(dist) if dist > &dist_to_neigh => {
-                        seen.insert(((neigh_x, neigh_y), dir_keys), dist_to_neigh);
+                        seen.insert(((neigh_x, neigh_y), (dir, new_nb_times)), dist_to_neigh);
                         stack.push(Reverse(Cell {
                             weight: dist_to_neigh,
-                            data: ((neigh_x, neigh_y), moves_to_neigh),
+                            data: ((neigh_x, neigh_y), (dir, new_nb_times)),
                         }));
                     }
                     None => {
-                        seen.insert(((neigh_x, neigh_y), dir_keys), dist_to_neigh);
+                        seen.insert(((neigh_x, neigh_y), (dir, new_nb_times)), dist_to_neigh);
                         stack.push(Reverse(Cell {
                             weight: dist_to_neigh,
-                            data: ((neigh_x, neigh_y), moves_to_neigh),
+                            data: ((neigh_x, neigh_y), (dir, new_nb_times)),
                         }));
                     }
                     _other_cases => {} // { println!("{_other_cases:?}") }, // already seen and not interesting
@@ -382,8 +327,8 @@ fn main() -> std::io::Result<()> {
         (grid[0].len() as u32 - 1, grid.len() as u32 - 1),
     )
     .unwrap();
-
     println!("p1: {}", res);
+
     let p2 = path_finding_ultra_crucible(
         &grid,
         (0, 0),
