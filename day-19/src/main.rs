@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use rayon::prelude::*;
 use regex::Regex;
 use std::collections::HashMap;
 use std::io::BufRead;
@@ -8,22 +9,22 @@ use std::{fs::File, io::BufReader};
 
 #[derive(Debug, PartialEq, Eq)]
 struct GearPart {
-    x: u32,
-    m: u32,
-    a: u32,
-    s: u32,
+    x: u64,
+    m: u64,
+    a: u64,
+    s: u64,
 }
 
 impl GearPart {
-    fn score(&self) -> u32 {
+    fn score(&self) -> u64 {
         self.x + self.m + self.a + self.s
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 enum Instruction {
-    FnLess(char, u32, String),
-    FnGreater(char, u32, String),
+    FnLess(char, u64, String),
+    FnGreater(char, u64, String),
     Label(String),
     Accept,
     Reject,
@@ -49,7 +50,7 @@ impl FromStr for Instruction {
                 .unwrap();
             let attr = attr.chars().next().unwrap();
             let op = op.chars().next().unwrap();
-            let value = number.parse::<u32>().unwrap();
+            let value = number.parse::<u64>().unwrap();
             if op == '>' {
                 return Ok(Instruction::FnLess(attr, value, String::from(out)));
             } else {
@@ -71,6 +72,48 @@ struct Workflow {
     instructions: Vec<Instruction>,
 }
 
+fn pipeline<'a>(
+    gear: &'a GearPart,
+    pipelines: &HashMap<String, Rc<Workflow>>,
+) -> Option<&'a GearPart> {
+    let mut opt = pipelines.get("in");
+    let mut res = None;
+
+    while let Some(workflow) = opt {
+        opt = match workflow.instructions.iter().find_map(|rule| match rule {
+            Instruction::FnGreater(c, value, redirect) => match c {
+                'x' if *value > gear.x => Some((Some(redirect), None)),
+                'm' if *value > gear.m => Some((Some(redirect), None)),
+                'a' if *value > gear.a => Some((Some(redirect), None)),
+                's' if *value > gear.s => Some((Some(redirect), None)),
+                _ => None,
+            },
+            Instruction::FnLess(c, value, redirect) => match c {
+                'x' if *value < gear.x => Some((Some(redirect), None)),
+                'm' if *value < gear.m => Some((Some(redirect), None)),
+                'a' if *value < gear.a => Some((Some(redirect), None)),
+                's' if *value < gear.s => Some((Some(redirect), None)),
+                _ => None,
+            },
+            Instruction::Label(label) => Some((Some(label), None)),
+
+            Instruction::Accept => Some((None, Some(Instruction::Accept))),
+            Instruction::Reject => Some((None, Some(Instruction::Reject))),
+        }) {
+            None => None,
+            Some((None, Some(Instruction::Reject))) => None,
+            Some((None, Some(Instruction::Accept))) => {
+                res = Some(gear);
+                None
+            }
+            Some((Some(label), _)) => pipelines.get(label),
+            _ => panic!(),
+        };
+    }
+
+    return res;
+}
+
 fn main() -> std::io::Result<()> {
     /* part 1 */
     let store = Regex::new(r"(.+)\{(.+)\}$").unwrap();
@@ -80,6 +123,7 @@ fn main() -> std::io::Result<()> {
         .lines()
         .filter_map(|line| line.ok())
         .filter(|line| line != "")
+        .filter(|line| !line.starts_with("#"))
         .group_by(|line| store.is_match(line))
         .into_iter()
         .fold(
@@ -137,7 +181,7 @@ fn main() -> std::io::Result<()> {
                                 .extract::<4>()
                                 .1
                                 .into_iter()
-                                .filter_map(|n| n.parse::<u32>().ok())
+                                .filter_map(|n| n.parse::<u64>().ok())
                                 .collect_tuple()
                                 .unwrap();
 
@@ -149,45 +193,115 @@ fn main() -> std::io::Result<()> {
             },
         );
 
+    let accepted = gears.iter().filter_map(|gear| pipeline(gear, &pipelines));
+
+    println!("p1: {}", accepted.map(|g| g.score()).sum::<u64>());
+    let four_thousands = 4_000;
+
+    let mut possibilities = vec![(
+        "in",
+        [
+            (1..(four_thousands + 1)),
+            (1..(four_thousands + 1)),
+            (1..(four_thousands + 1)),
+            (1..(four_thousands + 1)),
+        ],
+    )];
+
     let mut accepted = vec![];
-    gears.iter().for_each(|gear| {
-        let mut opt = pipelines.get("in");
 
-        while let Some(workflow) = opt {
-            opt = match workflow.instructions.iter().find_map(|rule| match rule {
-                Instruction::FnGreater(c, value, redirect) => match c {
-                    'x' if *value > gear.x => Some((Some(redirect), None)),
-                    'm' if *value > gear.m => Some((Some(redirect), None)),
-                    'a' if *value > gear.a => Some((Some(redirect), None)),
-                    's' if *value > gear.s => Some((Some(redirect), None)),
-                    _ => None,
-                },
-                Instruction::FnLess(c, value, redirect) => match c {
-                    'x' if *value < gear.x => Some((Some(redirect), None)),
-                    'm' if *value < gear.m => Some((Some(redirect), None)),
-                    'a' if *value < gear.a => Some((Some(redirect), None)),
-                    's' if *value < gear.s => Some((Some(redirect), None)),
-                    _ => None,
-                },
-                Instruction::Label(label) => Some((Some(label), None)),
+    while let Some((label, mut ranges)) = possibilities.pop() {
+        println!("now at: {label:?} with {:?}", (label, &ranges));
+        // println!("possibilities: {:?}", possibilities);
 
-                Instruction::Accept => Some((None, Some(Instruction::Accept))),
-                Instruction::Reject => Some((None, Some(Instruction::Reject))),
-            }) {
-                None => None,
-                Some((None, Some(Instruction::Reject))) => None,
-                Some((None, Some(Instruction::Accept))) => {
-                    accepted.push(gear);
-                    None
+        let start = pipelines.get(&label as &str).unwrap();
+        let mut out_redirected: Vec<(&str, [_; 4])> = vec![];
+
+        println!("instruction: {:?}", start);
+        for rule in start.instructions.iter() {
+            match rule {
+                Instruction::FnLess(c, value, redirect) => {
+                    let idx = match c {
+                        'x' => 0,
+                        'm' => 1,
+                        'a' => 2,
+                        's' => 3,
+                        _ => panic!(),
+                    };
+
+                    if ranges[idx].contains(&(value - 1)) {
+                        println!("et ouai {:?} {}", ranges[idx], value);
+                        let mut splitted_ranges = ranges.clone();
+                        let (out, _in) = (
+                            (splitted_ranges[idx].start)..(*value + 1),
+                            (*value + 1)..splitted_ranges[idx].end,
+                        );
+
+                        splitted_ranges[idx] = _in;
+                        out_redirected.push((redirect, splitted_ranges));
+
+                        ranges[idx] = out;
+                    }
                 }
-                Some((Some(label), _)) => pipelines.get(label),
-                _ => panic!(),
-            };
+                Instruction::FnGreater(c, value, redirect) => {
+                    let idx = match c {
+                        'x' => 0,
+                        'm' => 1,
+                        'a' => 2,
+                        's' => 3,
+                        _ => panic!(),
+                    };
+
+                    if ranges[idx].contains(&(value - 1)) {
+                        println!("et ouai {:?} {}", ranges[idx], value);
+                        let mut splitted_ranges = ranges.clone();
+                        let (_in, out) = (
+                            (splitted_ranges[idx].start)..*value,
+                            *value..splitted_ranges[idx].end,
+                        );
+
+                        splitted_ranges[idx] = _in;
+                        out_redirected.push((redirect, splitted_ranges));
+
+                        ranges[idx] = out;
+                    }
+                    // possibilities.push((label, splitted_ranges));
+                }
+
+                Instruction::Accept => {
+                    accepted.push(ranges.clone());
+                }
+                Instruction::Reject => {}
+                Instruction::Label(label) => {
+                    out_redirected.push((label, ranges.clone()));
+                }
+            }
         }
 
-    });
+        println!("out of {label:?} {out_redirected:?}");
+        possibilities.append(&mut out_redirected);
+    }
 
-    println!("p1: {}", accepted.iter().map(|g| g.score()).sum::<u32>() );
-
+    println!("{accepted:?}");
+    println!(
+        "p2: {:?}",
+        accepted
+            .par_iter()
+            .map(|atoms| {
+                (
+                    atoms.clone(),
+                    itertools::iproduct!(
+                        atoms[0].clone(),
+                        atoms[1].clone(),
+                        atoms[2].clone(),
+                        atoms[3].clone()
+                    )
+                    .count(),
+                )
+            })
+            .inspect(|c| println!("got: {c:?}"))
+            .map(|(_, c)| c)
+            .sum::<usize>(),
+    );
     Ok(())
 }
