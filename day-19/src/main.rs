@@ -1,6 +1,8 @@
 use itertools::Itertools;
 use regex::Regex;
+use std::collections::HashMap;
 use std::io::BufRead;
+use std::rc::Rc;
 use std::str::FromStr;
 use std::{fs::File, io::BufReader};
 
@@ -12,10 +14,16 @@ struct GearPart {
     s: u32,
 }
 
+impl GearPart {
+    fn score(&self) -> u32 {
+        self.x + self.m + self.a + self.s
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum Instruction {
-    FnLess((char, i32, String)),
-    FnGreater((char, i32, String)),
+    FnLess(char, u32, String),
+    FnGreater(char, u32, String),
     Label(String),
     Accept,
     Reject,
@@ -41,13 +49,12 @@ impl FromStr for Instruction {
                 .unwrap();
             let attr = attr.chars().next().unwrap();
             let op = op.chars().next().unwrap();
-            let value = number.parse::<i32>().unwrap();
+            let value = number.parse::<u32>().unwrap();
             if op == '>' {
-                return Ok(Instruction::FnGreater((attr, value, String::from(out))));
+                return Ok(Instruction::FnLess(attr, value, String::from(out)));
             } else {
-                return Ok(Instruction::FnLess((attr, value, String::from(out))));
+                return Ok(Instruction::FnGreater(attr, value, String::from(out)));
             }
-
         } else if s == "R" {
             return Ok(Instruction::Reject);
         } else if s == "A" {
@@ -55,10 +62,10 @@ impl FromStr for Instruction {
         } else {
             return Ok(Instruction::Label(String::from(s)));
         }
-        Err(ParseInstuctionError)
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 struct Workflow {
     label: String,
     instructions: Vec<Instruction>,
@@ -75,54 +82,112 @@ fn main() -> std::io::Result<()> {
         .filter(|line| line != "")
         .group_by(|line| store.is_match(line))
         .into_iter()
-        .map(|(key, group)| {
-            let lines: Vec<String> = group.collect();
-            println!("{key:?} {:?}", lines);
-            // process pipeline
-            if key {
-                let pipelines = lines
-                    .iter()
-                    .map(|line| {
-                        println!("{line:?}");
-                        let capture = store.captures_iter(&line).next().unwrap();
-                        let (label, rules_str) = capture
-                            .extract::<2>()
-                            .1
-                            .into_iter()
-                            .collect_tuple()
-                            .unwrap();
+        .fold(
+            (HashMap::new(), vec![]),
+            |(pipelines, gears), (key, group)| {
+                let lines: Vec<String> = group.collect();
+                // process pipeline
+                if key {
+                    let pipelines = lines
+                        .iter()
+                        .map(|line| {
+                            let capture = store.captures_iter(&line).next().unwrap();
+                            let (label, rules_str) = capture
+                                .extract::<2>()
+                                .1
+                                .into_iter()
+                                .collect_tuple()
+                                .unwrap();
 
-                        let rules = rules_str
-                            .split(",")
-                            .filter_map(|str| Instruction::from_str(str).ok())
-                            .collect_vec();
-                        println!("{label:?} {rules:?}");
-                    })
-                    .collect_vec();
-                return vec![];
-            } else {
-                let gears = lines
-                    .iter()
-                    .map(|line| {
-                        let capture = r_parts.captures_iter(&line).next().unwrap();
-                        let (x, m, a, s) = capture
-                            .extract::<4>()
-                            .1
-                            .into_iter()
-                            .filter_map(|n| n.parse::<u32>().ok())
-                            .collect_tuple()
-                            .unwrap();
+                            let rules = rules_str
+                                .split(",")
+                                .filter_map(|str| Instruction::from_str(str).ok())
+                                .collect_vec();
 
-                        GearPart { x, m, a, s }
-                    })
-                    .collect_vec();
-                println!("{:?}", gears);
-                return gears;
-            }
-        })
-        .collect_tuple()
-        .unwrap();
+                            (
+                                String::from(label),
+                                Rc::new(Workflow {
+                                    label: String::from(label),
+                                    instructions: rules,
+                                }),
+                            )
+                        })
+                        .chain(std::iter::once((
+                            String::from("A"),
+                            Rc::new(Workflow {
+                                label: String::from("A"),
+                                instructions: vec![Instruction::Accept],
+                            }),
+                        )))
+                        .chain(std::iter::once((
+                            String::from("R"),
+                            Rc::new(Workflow {
+                                label: String::from("R"),
+                                instructions: vec![Instruction::Reject],
+                            }),
+                        )))
+                        .collect::<HashMap<String, Rc<Workflow>>>();
+                    return (pipelines, gears);
+                } else {
+                    let gears = lines
+                        .iter()
+                        .map(|line| {
+                            let capture = r_parts.captures_iter(&line).next().unwrap();
+                            let (x, m, a, s) = capture
+                                .extract::<4>()
+                                .1
+                                .into_iter()
+                                .filter_map(|n| n.parse::<u32>().ok())
+                                .collect_tuple()
+                                .unwrap();
 
-    println!("pipelines: {:?} - parts {:?}", pipelines, gears);
+                            GearPart { x, m, a, s }
+                        })
+                        .collect_vec();
+                    return (pipelines, gears);
+                }
+            },
+        );
+
+    let mut accepted = vec![];
+    gears.iter().for_each(|gear| {
+        let mut opt = pipelines.get("in");
+
+        while let Some(workflow) = opt {
+            opt = match workflow.instructions.iter().find_map(|rule| match rule {
+                Instruction::FnGreater(c, value, redirect) => match c {
+                    'x' if *value > gear.x => Some((Some(redirect), None)),
+                    'm' if *value > gear.m => Some((Some(redirect), None)),
+                    'a' if *value > gear.a => Some((Some(redirect), None)),
+                    's' if *value > gear.s => Some((Some(redirect), None)),
+                    _ => None,
+                },
+                Instruction::FnLess(c, value, redirect) => match c {
+                    'x' if *value < gear.x => Some((Some(redirect), None)),
+                    'm' if *value < gear.m => Some((Some(redirect), None)),
+                    'a' if *value < gear.a => Some((Some(redirect), None)),
+                    's' if *value < gear.s => Some((Some(redirect), None)),
+                    _ => None,
+                },
+                Instruction::Label(label) => Some((Some(label), None)),
+
+                Instruction::Accept => Some((None, Some(Instruction::Accept))),
+                Instruction::Reject => Some((None, Some(Instruction::Reject))),
+            }) {
+                None => None,
+                Some((None, Some(Instruction::Reject))) => None,
+                Some((None, Some(Instruction::Accept))) => {
+                    accepted.push(gear);
+                    None
+                }
+                Some((Some(label), _)) => pipelines.get(label),
+                _ => panic!(),
+            };
+        }
+
+    });
+
+    println!("p1: {}", accepted.iter().map(|g| g.score()).sum::<u32>() );
+
     Ok(())
 }
