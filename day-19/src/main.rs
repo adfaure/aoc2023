@@ -288,20 +288,20 @@ fn main() -> std::io::Result<()> {
         accepted
             .par_iter()
             .map(|atoms| {
-                (
-                    atoms.clone(),
-                    itertools::iproduct!(
-                        atoms[0].clone(),
-                        atoms[1].clone(),
-                        atoms[2].clone(),
-                        atoms[3].clone()
+                    (atoms.clone(), atoms.iter().map(|r| r.end - r.start).product::<u64>()
                     )
-                    .count(),
-                )
+                    // atoms.clone(),
+                    // itertools::iproduct!(
+                    //     atoms[0].clone(),
+                    //     atoms[1].clone(),
+                    //     atoms[2].clone(),
+                    //     atoms[3].clone()
+                    // )
+                    // .count(),
             })
             .inspect(|c| println!("got: {c:?}"))
             .map(|(_, c)| c)
-            .sum::<usize>(),
+            .sum::<u64>(),
     );
     Ok(())
 }
