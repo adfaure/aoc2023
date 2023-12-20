@@ -1,5 +1,5 @@
 broadcaster -> a, b, c
 %a -> b
-%b -> c
+%b -> c, b
 %c -> inv
 &inv -> a
