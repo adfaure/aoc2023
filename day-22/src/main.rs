@@ -3,6 +3,7 @@ use rayon::prelude::*;
 use regex::Regex;
 use std::io::BufRead;
 use std::str::FromStr;
+use std::time::{Duration, Instant};
 use std::{fs::File, io::BufReader};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -43,11 +44,92 @@ impl Shape {
     }
 
     fn collides(&self, other: &Shape) -> bool {
-        return self
-            .cubes()
-            .cartesian_product(other.cubes())
-            // .inspect(|a| println!("{a:?}"))
-            .any(|a| a.0 == a.1);
+        if self.c1.1 != self.c2.1 {
+            let (s_min, s_max) = (self.c2.1.min(self.c1.1), self.c2.1.max(self.c1.1));
+            if other.c1.1 != other.c2.1 {
+                let (o_min, o_max) = (other.c2.1.min(other.c1.1), other.c2.1.max(other.c1.1));
+                return self.c1.0 == other.c1.0
+                    && self.c1.2 == other.c1.2
+                    && (s_min <= o_max && o_min <= s_max);
+            } else if other.c1.0 != other.c2.0 {
+                let (o_min, o_max) = (other.c2.0.min(other.c1.0), other.c2.0.max(other.c1.0));
+                return (s_min..=s_max).contains(&other.c1.1)
+                    && (o_min..=o_max).contains(&self.c1.0)
+                    && self.c1.2 == other.c1.2;
+            } else if other.c1.2 != other.c2.2 {
+                let (o_min, o_max) = (other.c2.2.min(other.c1.2), other.c2.2.max(other.c1.2));
+                return (s_min..=s_max).contains(&other.c1.1)
+                    && (o_min..=o_max).contains(&self.c1.2)
+                    && self.c1.0 == other.c1.0;
+            } else {
+                return (s_min..=s_max).contains(&other.c1.1)
+                    && self.c1.2 == other.c1.2
+                    && self.c1.0 == other.c1.0;
+            }
+        } else if self.c1.0 != self.c2.0 {
+            let (s_min, s_max) = (self.c2.0.min(self.c1.0), self.c2.0.max(self.c1.0));
+            if other.c1.1 != other.c2.1 {
+                let (o_min, o_max) = (other.c2.1.min(other.c1.1), other.c2.1.max(other.c1.1));
+                return (o_min..=o_max).contains(&self.c1.1)
+                    && (s_min..=s_max).contains(&other.c1.0)
+                    && self.c1.2 == other.c1.2;
+            } else if other.c1.0 != other.c2.0 {
+                let (o_min, o_max) = (other.c2.0.min(other.c1.0), other.c2.0.max(other.c1.0));
+                return self.c1.1 == other.c1.1
+                    && self.c1.2 == other.c1.2
+                    && (s_min <= o_max && o_min <= s_max);
+            } else if other.c1.2 != other.c2.2 {
+                let (o_min, o_max) = (other.c2.2.min(other.c1.2), other.c2.2.max(other.c1.2));
+                return (s_min..=s_max).contains(&other.c1.0)
+                    && (o_min..=o_max).contains(&self.c1.2)
+                    && self.c1.1 == other.c1.1;
+            } else {
+                return (s_min..=s_max).contains(&other.c1.0)
+                    && self.c1.2 == other.c1.2
+                    && self.c1.1 == other.c1.1;
+            }
+        } else if self.c1.2 != self.c2.2 {
+            let (s_min, s_max) = (self.c2.2.min(self.c1.2), self.c2.2.max(self.c1.2));
+            if other.c1.1 != other.c2.1 {
+                let (o_min, o_max) = (other.c2.1.min(other.c1.1), other.c2.1.max(other.c1.1));
+                return (o_min..=o_max).contains(&self.c1.1)
+                    && (s_min..=s_max).contains(&other.c1.2)
+                    && self.c1.0 == other.c1.0;
+            } else if other.c1.0 != other.c2.0 {
+                let (o_min, o_max) = (other.c2.0.min(other.c1.0), other.c2.0.max(other.c1.0));
+                return (o_min..=o_max).contains(&self.c1.0)
+                    && (s_min..=s_max).contains(&other.c1.2)
+                    && self.c1.1 == other.c1.1;
+            } else if other.c1.2 != other.c2.2 {
+                let (o_min, o_max) = (other.c2.2.min(other.c1.2), other.c2.2.max(other.c1.2));
+                return self.c1.1 == other.c1.1
+                    && self.c1.0 == other.c1.0
+                    && (s_min <= o_max && o_min <= s_max);
+            } else {
+                return (s_min..=s_max).contains(&other.c1.2)
+                    && self.c1.0 == other.c1.0
+                    && self.c1.1 == other.c1.1;
+            }
+        } else {
+            if other.c1.1 != other.c2.1 {
+                let (o_min, o_max) = (other.c2.1.min(other.c1.1), other.c2.1.max(other.c1.1));
+                return (o_min..=o_max).contains(&self.c1.1)
+                    && self.c1.2 == other.c1.2
+                    && self.c1.0 == other.c1.0;
+            } else if other.c1.0 != other.c2.0 {
+                let (o_min, o_max) = (other.c2.0.min(other.c1.0), other.c2.0.max(other.c1.0));
+                return (o_min..=o_max).contains(&self.c1.0)
+                    && self.c1.2 == other.c1.2
+                    && self.c1.1 == other.c1.1;
+            } else if other.c1.2 != other.c2.2 {
+                let (o_min, o_max) = (other.c2.2.min(other.c1.2), other.c2.2.max(other.c1.2));
+                return self.c1.1 == other.c1.1
+                    && self.c1.0 == other.c1.0
+                    && (o_min..=o_max).contains(&self.c1.2);
+            } else {
+                return self == other;
+            }
+        }
     }
 }
 
@@ -133,7 +215,7 @@ fn disintegratation_rate(shapes: &Vec<Shape>, idx: usize) -> u32 {
         if falled {
             score += 1;
         }
-        
+
         res.insert(idx, try_move);
     }
 
@@ -141,6 +223,7 @@ fn disintegratation_rate(shapes: &Vec<Shape>, idx: usize) -> u32 {
 }
 
 fn solve_p1(mut shapes: Vec<Shape>) {
+    let now = Instant::now();
     // sort by z axis, make the lowest fall first
     shapes.sort_by(|a, b| a.c1.2.min(a.c2.2).cmp(&b.c1.2.min(b.c2.2)));
     let mut res = shapes.clone();
@@ -165,17 +248,19 @@ fn solve_p1(mut shapes: Vec<Shape>) {
         res.insert(idx, try_move);
     }
 
-
     println!(
-        "p2: {:?}",
+        "p2: {:?} in {:?}",
         (0..res.len())
             .par_bridge()
             .filter(|idx| safe_to_disintegrate(&res, *idx))
-            .count()
+            .count(),
+        now.elapsed()
     );
 }
 
 fn solve_p2(mut shapes: Vec<Shape>) {
+    let now = Instant::now();
+
     // sort by z axis, make the lowest fall first
     shapes.sort_by(|a, b| a.c1.2.min(a.c2.2).cmp(&b.c1.2.min(b.c2.2)));
     let mut res = shapes.clone();
@@ -200,14 +285,14 @@ fn solve_p2(mut shapes: Vec<Shape>) {
         res.insert(idx, try_move);
     }
 
-
     println!(
-        "p1: {:?}",
+        "p2: {:?} in {:?}",
         (0..res.len())
             .par_bridge()
             .map(|idx| disintegratation_rate(&res, idx))
-            .sum::<u32>()
-        );
+            .sum::<u32>(),
+        now.elapsed()
+    );
 }
 
 fn main() -> std::io::Result<()> {
@@ -221,6 +306,7 @@ fn main() -> std::io::Result<()> {
         .collect_vec();
 
     solve_p1(shapes.clone());
+
     solve_p2(shapes);
     Ok(())
 }
