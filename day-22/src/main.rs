@@ -3,7 +3,7 @@ use rayon::prelude::*;
 use regex::Regex;
 use std::io::BufRead;
 use std::str::FromStr;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use std::{fs::File, io::BufReader};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -13,7 +13,7 @@ struct Shape {
 }
 
 impl Shape {
-    fn cubes(&self) -> impl Iterator<Item = (i32, i32, i32)> + Clone + '_ {
+    fn _cubes(&self) -> impl Iterator<Item = (i32, i32, i32)> + Clone + '_ {
         let (from, to);
         if self.c1.1 != self.c2.1 {
             (from, to) = (self.c1.1.min(self.c2.1), self.c1.1.max(self.c2.1));
