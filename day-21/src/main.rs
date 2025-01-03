@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::io::BufRead;
 use std::{fs::File, io::BufReader};
+use rayon::prelude::*;
 
 fn print_with_pose(grid: &Vec<Vec<char>>, reachable: HashSet<(i32, i32)>) {
     println!("{:?}", reachable);
@@ -58,12 +59,66 @@ fn print_with_pose(grid: &Vec<Vec<char>>, reachable: HashSet<(i32, i32)>) {
     println!("-------------------------");
 }
 
+fn solve_p2(grid: &Vec<Vec<char>>, start: &Vec<(i32, i32)>, max_iter: u64) -> Vec<(u64, u64)> {
+    let mut seen = HashSet::new();
+    let mut fifo = VecDeque::new();
+    let mut current_dist = 0;
 
-fn solve_p1(grid: &Vec<Vec<char>>, start: &Vec<(i32, i32)>, max_iter: u32) -> u32 {
+    fifo.extend(start.iter().map(|pos| (0, *pos)));
+
+    while let Some((dist, pos)) = fifo.pop_front() {
+        if !seen.insert((dist, pos)) || dist > max_iter {
+            continue;
+        }
+
+        if current_dist < dist {
+            eprintln!("Finished {dist}");
+            current_dist = dist;
+        }
+
+        [(0, 1), (0, -1), (1, 0), (-1, 0)]
+            .iter()
+            .map(|dir| ((pos.0 + dir.0), (pos.1 + dir.1)))
+            .map(|pos| {
+                let mut recalage = pos;
+
+                if pos.0 >= grid[0].len() as i32 || pos.0 < 0 {
+                    recalage.0 = recalage.0.rem_euclid(grid[0].len() as i32)
+                }
+
+                if pos.1 >= grid.len() as i32 || pos.1 < 0 {
+                    recalage.1 = recalage.1.rem_euclid(grid.len() as i32)
+                }
+
+                // println!("{pos:?} => {recalage:?}: {:?} {}", pos.0 % grid[0].len() as i32, grid[0].len());
+                (pos, recalage)
+            })
+            .filter(|(_pos, new_pos)| {
+                    grid[new_pos.1 as usize][new_pos.0 as usize] == '.'
+                        || grid[new_pos.1 as usize][new_pos.0 as usize] == 'S'
+            })
+            .for_each(|new_pos| {
+                fifo.push_back((dist + 1, new_pos.0));
+            });
+    }
+
+    seen
+        .clone()
+        .into_iter()
+        .sorted_by(|a, b| a.0.cmp(&b.0))
+        // .filter(|(dist, v)| *dist == max_iter)
+        // .map(|(_, v)| v)
+        .group_by(|elt| elt.0)
+        .into_iter()
+        .map(|(ge0, group)| (ge0 as u64, group.count() as u64))
+        .collect::<Vec<(u64, u64)>>()
+}
+
+fn solve_p1(grid: &Vec<Vec<char>>, start: &Vec<(i32, i32)>, max_iter: u64) -> u64 {
     let mut seen = HashSet::new();
     let mut fifo = VecDeque::new();
 
-    fifo.extend(start.into_iter().map(|pos| (0, *pos)));
+    fifo.extend(start.iter().map(|pos| (0, *pos)));
 
     while let Some((dist, pos)) = fifo.pop_front() {
         if !seen.insert((dist, pos)) || dist > max_iter {
@@ -72,43 +127,44 @@ fn solve_p1(grid: &Vec<Vec<char>>, start: &Vec<(i32, i32)>, max_iter: u32) -> u3
 
         [(0, 1), (0, -1), (1, 0), (-1, 0)]
             .iter()
-            .map(|dir| ((pos.0 + dir.0) as i32, (pos.1 + dir.1) as i32))
+            .map(|dir| ((pos.0 + dir.0), (pos.1 + dir.1)))
             .filter(|new_pos| {
                 if new_pos.0 >= 0
                     && new_pos.1 >= 0
                     && new_pos.0 < grid[0].len() as i32
                     && new_pos.1 < grid.len() as i32
                 {
-                    return grid[new_pos.1 as usize][new_pos.0 as usize] == '.'
-                        || grid[new_pos.1 as usize][new_pos.0 as usize] == 'S';
+                    grid[new_pos.1 as usize][new_pos.0 as usize] == '.'
+                        || grid[new_pos.1 as usize][new_pos.0 as usize] == 'S'
                 } else {
-                    return false;
+                    false
                 }
             })
             .for_each(|new_pos| {
                 fifo.push_back((dist + 1, new_pos));
             });
+
     }
 
     let reachable = seen
         .clone()
         .into_iter()
-        .filter(|(dist, v)| *dist == max_iter)
+        // .filter(|(dist, v)| *dist == max_iter)
         .map(|(_, v)| v)
         .collect::<HashSet<_>>();
 
-    for (y, line) in grid.iter().enumerate() {
-        for (x, c) in line.iter().enumerate() {
-            if reachable.contains(&(x as i32, y as i32)) && grid[y][x] != 'S' {
-                print!("O")
-            } else {
-                print!("{c}")
-            }
-        }
-        println!();
-    }
+    // for (y, line) in grid.iter().enumerate() {
+    //     for (x, c) in line.iter().enumerate() {
+    //         if reachable.contains(&(x as i32, y as i32)) && grid[y][x] != 'S' {
+    //             print!("O")
+    //         } else {
+    //             print!("{c}")
+    //         }
+    //     }
+    //     println!();
+    // }
 
-    reachable.len() as u32
+    reachable.len() as u64
 }
 
 fn main() -> std::io::Result<()> {
@@ -137,7 +193,25 @@ fn main() -> std::io::Result<()> {
 
     // let start = vec![(15, 0)];
 
-    println!("p1: {:?} ", solve_p1(&grid, &start, 64));
+    // println!("p1: {:?} ", solve_p1(&grid, &start, 64));
+    println!("x;y");
+
+    // let mut xs = vec![];
+    // let mut ys = vec![];
+
+    // (1..135).step_by(1).for_each(|i| {
+    //     let re = solve_p2(&grid, &start, i) as f64;
+    //     // xs.push(i as f64);
+    //     // ys.push(re);
+    //     println!("{i};{re}");
+    // });
+
+    // println!("500={:?}", solve_p2(&grid, &start, 50));
+
+    for (dist, number) in solve_p2(&grid, &start, 982) {
+        println!("{:?};{:?}", dist, number);
+    }
+    // println!("p2: {}", lagrange_interpolation(&xs, &ys, 1000f64));
 
     Ok(())
 }
