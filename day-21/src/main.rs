@@ -208,9 +208,12 @@ fn main() -> std::io::Result<()> {
 
     // println!("500={:?}", solve_p2(&grid, &start, 50));
 
-    for (dist, number) in solve_p2(&grid, &start, 982) {
-        println!("{:?};{:?}", dist, number);
+    for (dist, number) in solve_p2(&grid, &start, 458) {
+        if [ 196, 327, 458 ].contains(&dist) {
+            println!("{:?};{:?}", dist, number);
+        }
     }
+
     // println!("p2: {}", lagrange_interpolation(&xs, &ys, 1000f64));
 
     Ok(())
