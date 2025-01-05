@@ -194,7 +194,7 @@ fn disintegratation_rate(shapes: &Vec<Shape>, idx: usize) -> u32 {
     for idx in 0..sim_removal.len() {
         // println!("{:?}", res);
         let mut can_fall = true;
-        let mut falled = false;
+        let mut fell = false;
         let mut try_move: Shape = res.remove(idx);
 
         while try_move.c1.2.min(try_move.c2.2) > 1 && can_fall {
@@ -208,11 +208,11 @@ fn disintegratation_rate(shapes: &Vec<Shape>, idx: usize) -> u32 {
             }
 
             if can_fall {
-                falled = true;
+                fell = true;
             }
         }
 
-        if falled {
+        if fell {
             score += 1;
         }
 
